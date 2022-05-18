@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
+const jwt = require("jsonwebtoken");
 const app = express();
 const { MongoClient, ServerApiVersion } = require("mongodb");
 
@@ -18,6 +19,24 @@ const client = new MongoClient(uri, {
   serverApi: ServerApiVersion.v1,
 });
 
+function verifyJWT(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).send({ message: "Unauthorize access" });
+  }
+  const token = authHeader.split(" ")[1];
+
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, function (err, decoded) {
+    if (err) {
+      return res.status(401).send({ message: "forbidden access" });
+    }
+    ///console.log(decoded); // bar
+
+    req.decoded = decoded;
+    next;
+  });
+}
+
 async function run() {
   try {
     await client.connect();
@@ -28,8 +47,31 @@ async function run() {
     const bookingConnection = client
       .db("doctors-portal")
       .collection("bookings");
+    const userConnection = client.db("doctors-portal").collection("users");
 
     //console.log(serviceConnection);
+
+    app.get("/users", async (req, res) => {
+      const users = await userConnection.find().toArray();
+      res.send(users);
+    });
+
+    app.put("/user/:email", async (req, res) => {
+      const email = req.params.email;
+      const user = req.body;
+      const filter = { eamil: email };
+      const options = { upsert: true };
+      const updateDoc = {
+        $set: user,
+      };
+      const result = await userConnection.updateOne(filter, updateDoc, options);
+      const token = jwt.sign(
+        { email: email },
+        process.env.ACCESS_TOKEN_SECRET,
+        { expiresIn: "1h" }
+      );
+      res.send({ result, token });
+    });
 
     // get data
 
@@ -41,8 +83,45 @@ async function run() {
       res.send(services);
     });
 
-    // post data
+    app.get("/available", async (req, res) => {
+      const date = req.query.date;
 
+      //step 1: get all services
+
+      const services = await serviceConnection.find().toArray();
+
+      // step 2: get the booking of that day
+      const quary = { date: date };
+      const bookings = await bookingConnection.find(quary).toArray();
+
+      // step 3: for each service find booking of that service
+      services.forEach((service) => {
+        const serviceBookings = bookings.filter(
+          (b) => b.treatment === service.name
+        );
+        const booked = serviceBookings.map((s) => s.slot);
+        // service.booked = booked;
+
+        const available = service.slots.filter((s) => !booked.includes(s));
+        service.slots = available;
+      });
+      res.send(services);
+    });
+
+    app.get("/booking", verifyJWT, async (req, res) => {
+      const patient = req.query.patient;
+      const decodedEmail = req.decoded.email;
+      if (patient === decodedEmail) {
+        const query = { patient: patient };
+        const bookings = await bookingConnection.find(query).toArray();
+        console.log(query);
+        res.send(bookings);
+      } else {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+    });
+
+    // post data
     app.post("/booking", async (req, res) => {
       const booking = req.body;
       const query = {
@@ -50,12 +129,13 @@ async function run() {
         date: booking.date,
         patient: booking.patient,
       };
+      console.log(query);
       const exists = await bookingConnection.findOne(query);
       if (exists) {
         return res.send({ success: false, booking: exists });
       }
       const result = await bookingConnection.insertOne(booking);
-      res.send(result);
+      res.send({ success: true, result });
     });
   } finally {
   }
