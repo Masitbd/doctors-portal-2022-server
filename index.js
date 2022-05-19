@@ -136,6 +136,15 @@ async function run() {
       const doctors = await doctorConnection.find().toArray();
       res.send(doctors);
     });
+
+    // delete doctor
+    app.delete("/doctor/:email", async (req, res) => {
+      const email = req.params.email;
+      const filter = { email: email };
+      const result = await doctorConnection.deleteOne(filter);
+      res.send(result);
+    });
+
     // post data
 
     app.post("/doctor", async (req, res) => {
