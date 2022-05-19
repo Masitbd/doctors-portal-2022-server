@@ -48,12 +48,23 @@ async function run() {
       .db("doctors-portal")
       .collection("bookings");
     const userConnection = client.db("doctors-portal").collection("users");
+    const doctorConnection = client.db("doctors-portal").collection("doctors");
 
     //console.log(serviceConnection);
 
     app.get("/users", async (req, res) => {
       const users = await userConnection.find().toArray();
       res.send(users);
+    });
+
+    app.put("/user/admin/:email", async (req, res) => {
+      const email = req.params.email;
+      const filter = { eamil: email };
+      const updateDoc = {
+        $set: user,
+      };
+      const result = await userConnection.updateOne(filter, updateDoc, options);
+      res.send(result);
     });
 
     app.put("/user/:email", async (req, res) => {
@@ -77,7 +88,7 @@ async function run() {
 
     app.get("/service", async (req, res) => {
       const query = {};
-      const cursor = serviceConnection.find(query);
+      const cursor = serviceConnection.find(query).project({ name: 1 });
       const services = await cursor.toArray();
       //console.log(services);
       res.send(services);
@@ -121,7 +132,18 @@ async function run() {
       }
     });
 
+    app.get("/doctor", async (req, res) => {
+      const doctors = await doctorConnection.find().toArray();
+      res.send(doctors);
+    });
     // post data
+
+    app.post("/doctor", async (req, res) => {
+      const doctor = req.body;
+      const result = await doctorConnection.insertOne(doctor);
+      res.send(result);
+    });
+
     app.post("/booking", async (req, res) => {
       const booking = req.body;
       const query = {
